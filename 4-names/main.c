@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <signal.h>
 
-// Apufunktio osoitteen tulostamiseen
+// Helper function for printing an address
 void print_address(const char *prefix, const struct addrinfo *res)
 {
         char outbuf[80];
@@ -31,22 +31,21 @@ void print_address(const char *prefix, const struct addrinfo *res)
 }
 
 
-// host: kohdesolmun nimi (tai IP-osoite tekstimuodossa)
-// serv: kohdepalvelun nimi (tai porttinumero tekstimuodossa)
+// host: Name or IP-address as a string
+// serv: Port number as a string
 int tcp_connect(const char *host, const char *serv)
 {
     int sockfd, n;
     struct addrinfo hints, *res, *ressave;
-    printf("TCP CONNECT FUNCTINON PARAMS: %s ans %s\n", host, serv);
-    // Ensiksi kerrotaan hints-rakenteessa, että osoiteperhettä ei ole
-    // rajoitettu, eli sekä IPv4 ja IPv6 - osoitteet kelpaavat.
-    // Lisäksi sanomme, että olemme pelkästään kiinnostuneita TCP-yhteyksistä
+
     memset(&hints, 0, sizeof(struct addrinfo));
+    //Both IPv4 and IPv6, no restrictions
     hints.ai_family = AF_UNSPEC;
+    // Only TCP connections
     hints.ai_socktype = SOCK_STREAM;
 
-    // Tehdään nimikysely käyttäen ylläolevaa hints-rakennetta
-    // Funktio varaa vastaukselle tilan itse, osoitin palautuu res-muuttujaan
+    // Query using hints-struct
+    // Function reserves memory and returns the pointer
     if ( (n = getaddrinfo(host, serv, &hints, &res)) != 0) {
             fprintf(stderr, "tcp_connect error for %s, %s: %s\n",
                     host, serv, gai_strerror(n));
@@ -54,10 +53,7 @@ int tcp_connect(const char *host, const char *serv)
     }
     ressave = res; // so that we can release the memory afterwards
 
-    // res-rakenne osoittaa linkitettyyn listaan. Käydään läpi linkitettyä
-    // listaa yksi kerrallaan ja yritetään yhdistää saatuun osoitteeseen.
-    // res-rakenne sisältää kaikki parameterit mitä tarvitsemme socket-
-    // ja connect - kutsuissa.
+    // res-structure points to a linked list. Iterate over it and try to connect.
     do {
            sockfd = socket(res->ai_family, res->ai_socktype,
                             res->ai_protocol);
@@ -66,9 +62,7 @@ int tcp_connect(const char *host, const char *serv)
 
             print_address("Trying to connect", res);
 
-            // Mikäli yhteys onnistuu, silmukka keskeytetään välittömästi,
-            // koska meillä on toimiva yhteys, eikä loppuja osoitteita
-            // tarvitse kokeilla
+            // If connection works exit the loop.
             if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0)
                   break;          /* success */
 
@@ -77,8 +71,7 @@ int tcp_connect(const char *host, const char *serv)
             close(sockfd);  /* ignore this one */
     } while ( (res = res->ai_next) != NULL);
 
-    // Päästiinkö linkitetyn listan loppuun, mutta yhteys ei onnistunut?
-    // ==> virhe
+    // If we reached the end of the list but didn't connect ==> Error
     if (res == NULL) {      /* errno set from final connect() */
             fprintf(stderr, "tcp_connect error for %s, %s\n", host, serv);
             sockfd = -1;
@@ -86,12 +79,16 @@ int tcp_connect(const char *host, const char *serv)
             print_address("We are using address", res);
     }
 
-    // Järjestelmä on varannut muistin linkitetylle listalle, se pitää vapauttaa
+    // Free the memory of a linked list
     freeaddrinfo(ressave);
 
     return sockfd;
 }
 
+/*
+    Helper function that reads server names and port numbers from the parameter sockfd socket.
+    It then creates a new TCP connection to that address&port number and sends the IP address and port.
+*/
 int helper(int sockfd)
 {
     int n;
@@ -139,7 +136,7 @@ int helper(int sockfd)
     char *info_B;
     
     info_B = (char*) malloc( 80* sizeof(char));
-    sprintf(info_B, "ADDR %s %d 708894\n", outbuf,  ntohs(own.sin_port));
+    sprintf(info_B, "ADDR %s %d 000000\n", outbuf,  ntohs(own.sin_port));
 
     if (write(sockfd_B, info_B, strlen(info_B)) < 0) {
         fprintf(stderr, "write error\n");
@@ -152,7 +149,7 @@ int helper(int sockfd)
 
 int main(void)
 {
-    // Emme halua keskeytystä SIGPIPE - signaalista, vaan sivuutamme sen kokonaan
+    // Skip SIGPIPE - Signal.
     signal(SIGPIPE, SIG_IGN);
     int sockfd_A, n;
 
